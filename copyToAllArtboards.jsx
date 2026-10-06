@@ -53,7 +53,7 @@
     var samePropDesc = placementGroup.add("statictext", undefined, "");
     samePropDesc.text = "(scale relative to target artboard size)";
     samePropDesc.margins = [20, 0, 0, 0];
-    samePropDesc.graphics.font = ScriptUI.newFont("helvetica", "condensed", 10);
+    samePropDesc.graphics.font = ScriptUI.newFont("Tondo", "condensed", 10);
     
     var centeredBtn = placementGroup.add("radiobutton", undefined, "Centered on artboard");
 
