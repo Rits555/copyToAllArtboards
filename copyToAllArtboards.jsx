@@ -57,6 +57,20 @@
     
     var centeredBtn = placementGroup.add("radiobutton", undefined, "Centered on artboard");
 
+    // Font Settings Group
+    var fontGroup = dialog.add("panel", undefined, "Font Settings");
+    fontGroup.orientation = "column";
+    fontGroup.alignChildren = "left";
+    fontGroup.spacing = 8;
+    
+    var fontLabel = fontGroup.add("statictext", undefined, "Font:");
+    var fontDropdown = fontGroup.add("dropdownlist", undefined, getFontList());
+    fontDropdown.selection = findFontIndex(fontDropdown.items, "Tondo") || 0;
+    
+    var styleLabel = fontGroup.add("statictext", undefined, "Style:");
+    var styleDropdown = fontGroup.add("dropdownlist", undefined, ["Regular", "Bold", "Italic", "Bold Italic"]);
+    styleDropdown.selection = 1; // Bold by default
+
     // Options Group
     var optionsGroup = dialog.add("panel", undefined, "Options");
     optionsGroup.orientation = "column";
@@ -65,6 +79,9 @@
     
     var skipCurrentCheckbox = optionsGroup.add("checkbox", undefined, "Skip current artboard");
     skipCurrentCheckbox.value = false;
+    
+    var applyFontCheckbox = optionsGroup.add("checkbox", undefined, "Apply font to text objects");
+    applyFontCheckbox.value = true;
 
     // Button Group
     var buttonGroup = dialog.add("group");
@@ -96,6 +113,9 @@
             placementMode = "centered";
         }
         var skipCurrent = skipCurrentCheckbox.value;
+        var applyFont = applyFontCheckbox.value;
+        var selectedFont = fontDropdown.selection.text;
+        var selectedStyle = styleDropdown.selection.text;
 
         // Get target artboards
         var artboardIndexes = [];
@@ -156,6 +176,11 @@
                 if (item && item.duplicate) {
                     var clone = item.duplicate();
 
+                    // Apply font settings to text objects
+                    if (applyFont) {
+                        applyFontSettings(clone, selectedFont, selectedStyle);
+                    }
+
                     // Apply placement mode
                     switch (placementMode) {
                         case "same_position":
@@ -187,6 +212,79 @@
     dialog.show();
 
     // Helper functions
+    function getFontList() {
+        var fonts = [];
+        var fontCount = app.fonts.length;
+        for (var i = 0; i < fontCount; i++) {
+            fonts.push(app.fonts[i].name);
+        }
+        fonts.sort();
+        return fonts;
+    }
+
+    function findFontIndex(fontArray, fontName) {
+        for (var i = 0; i < fontArray.length; i++) {
+            if (fontArray[i].indexOf(fontName) !== -1) {
+                return i;
+            }
+        }
+        return null;
+    }
+
+    function getStyleSuffix(style) {
+        switch (style) {
+            case "Bold":
+                return "Bold";
+            case "Italic":
+                return "Italic";
+            case "Bold Italic":
+                return "Bold Italic";
+            default:
+                return "Regular";
+        }
+    }
+
+    function applyFontSettings(item, fontName, style) {
+        if (item.typename === "TextFrame") {
+            applyFontToTextFrame(item, fontName, style);
+        } else if (item.typename === "GroupItem") {
+            for (var i = 0; i < item.pageItems.length; i++) {
+                applyFontSettings(item.pageItems[i], fontName, style);
+            }
+        }
+    }
+
+    function applyFontToTextFrame(textFrame, fontName, style) {
+        try {
+            var styleSuffix = getStyleSuffix(style);
+            var fullFontName = fontName;
+            
+            if (styleSuffix !== "Regular") {
+                fullFontName = fontName + " " + styleSuffix;
+            }
+
+            var fontFound = false;
+            for (var i = 0; i < app.fonts.length; i++) {
+                if (app.fonts[i].name === fullFontName) {
+                    textFrame.textRange.characterAttributes.textFont = app.fonts[i];
+                    fontFound = true;
+                    break;
+                }
+            }
+
+            if (!fontFound) {
+                for (var i = 0; i < app.fonts.length; i++) {
+                    if (app.fonts[i].name === fontName) {
+                        textFrame.textRange.characterAttributes.textFont = app.fonts[i];
+                        break;
+                    }
+                }
+            }
+        } catch (e) {
+            // Font application failed silently
+        }
+    }
+
     function getArtboardRect(artboard) {
         var rect = artboard.artboardRect;
         return {
@@ -201,55 +299,49 @@
 
     function placeSamePosition(item, currentRect, targetRect) {
         var bounds = item.visibleBounds;
-        if (bounds[0] === bounds[2] || bounds[1] === bounds[3]) return; // Skip if no bounds
+        if (bounds[0] === bounds[2] || bounds[1] === bounds[3]) return;
 
         var itemLeft = bounds[0];
         var itemTop = bounds[1];
 
-        // Calculate relative position within current artboard
         var localX = itemLeft - currentRect.left;
         var localY = itemTop - currentRect.top;
 
-        // Apply same relative position to target artboard
         item.left = targetRect.left + localX;
         item.top = targetRect.top + localY;
     }
 
     function placeSameProportion(item, currentRect, targetRect) {
         var bounds = item.visibleBounds;
-        if (bounds[0] === bounds[2] || bounds[1] === bounds[3]) return; // Skip if no bounds
+        if (bounds[0] === bounds[2] || bounds[1] === bounds[3]) return;
 
         var itemW = Math.abs(bounds[2] - bounds[0]);
         var itemH = Math.abs(bounds[1] - bounds[3]);
         var itemLeft = bounds[0];
         var itemTop = bounds[1];
 
-        // Calculate relative position and size within current artboard
         var relativeX = (itemLeft - currentRect.left) / currentRect.width;
         var relativeY = (itemTop - currentRect.top) / currentRect.height;
         var relativeW = itemW / currentRect.width;
         var relativeH = itemH / currentRect.height;
 
-        // Apply to target artboard with same proportions
         var newLeft = targetRect.left + (relativeX * targetRect.width);
         var newTop = targetRect.top + (relativeY * targetRect.height);
         var newW = relativeW * targetRect.width;
         var newH = relativeH * targetRect.height;
 
-        // Set new dimensions
         var scaleX = newW / itemW * 100;
         var scaleY = newH / itemH * 100;
 
         item.resize(scaleX, scaleY, true, true, true, true, 1, Transformation.DOCUMENTORIGIN);
 
-        // Set new position (after resize, adjust for center point)
         item.left = newLeft + (newW / 2) - (itemW * (scaleX / 100) / 2);
         item.top = newTop + (newH / 2) - (itemH * (scaleY / 100) / 2);
     }
 
     function centerOnArtboard(item, targetRect) {
         var bounds = item.visibleBounds;
-        if (bounds[0] === bounds[2] || bounds[1] === bounds[3]) return; // Skip if no bounds
+        if (bounds[0] === bounds[2] || bounds[1] === bounds[3]) return;
 
         var itemCenterX = (bounds[0] + bounds[2]) / 2;
         var itemCenterY = (bounds[1] + bounds[3]) / 2;
